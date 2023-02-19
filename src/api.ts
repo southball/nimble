@@ -12,7 +12,12 @@ type File = {
 } & ({ type: "file" } | { type: "directory"; files: File[] });
 
 function crawlDirectory(directory: string, prefix: string = ""): File[] {
-  const entries = fs.readdirSync(directory, { withFileTypes: true });
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(directory, { withFileTypes: true });
+  } catch (e) {
+    entries = [];
+  }
   const cache: File[] = [];
   for (const entry of entries) {
     if (entry.isFile()) {
