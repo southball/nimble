@@ -4,19 +4,21 @@
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.1"
+    "express": "^4.18.2"
   },
   "devDependencies": {
-    "@opentelemetry/exporter-jaeger": "^1.7.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.33.0",
-    "@opentelemetry/instrumentation": "^0.33.0",
-    "@opentelemetry/instrumentation-express": "^0.31.2",
-    "@opentelemetry/instrumentation-http": "^0.33.0",
-    "@opentelemetry/sdk-trace-node": "^1.7.0",
-    "@types/express": "^4.17.14",
-    "@types/node": "^18.8.2",
+    "@opentelemetry/api": "^1.4.0",
+    "@opentelemetry/exporter-jaeger": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.35.1",
+    "@opentelemetry/instrumentation": "^0.35.1",
+    "@opentelemetry/instrumentation-express": "^0.32.1",
+    "@opentelemetry/instrumentation-http": "^0.35.1",
+    "@opentelemetry/sdk-trace-node": "^1.9.1",
+    "@types/express": "^4.17.17",
+    "@types/node": "^18.14.0",
     "ts-node": "^10.9.1",
-    "typescript": "^4.8.4"
+    "typescript": "^4.9.5",
+    "yarn-upgrade-all": "^0.7.2"
   },
   "scripts": {
     "start": "ts-node src/index.ts"
