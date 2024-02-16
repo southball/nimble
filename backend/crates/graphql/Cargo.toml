@@ -1,0 +1,10 @@
+[package]
+name = "nimble-graphql"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-graphql-axum.workspace = true
+async-graphql.workspace = true
+axum.workspace = true
+tokio.workspace = true

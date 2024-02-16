@@ -1,0 +1,38 @@
+services:
+  backend:
+    build:
+      context: backend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - backend_target:/backend/target
+      - ./backend:/backend
+      - ./frontend:/frontend
+    networks:
+      - internal
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend:/frontend
+    networks:
+      - internal
+
+  nginx:
+    image: nginx
+    volumes:
+      - ./nginx/dev.conf:/etc/nginx/nginx.conf
+    ports:
+      - 3000:3000
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - internal
+
+volumes:
+  backend_target:
+
+networks:
+  internal:

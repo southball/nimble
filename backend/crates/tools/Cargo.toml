@@ -1,0 +1,14 @@
+[package]
+name = "nimble-tools"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "generate-graphql-schema"
+path = "src/generate-graphql-schema.rs"
+
+[dependencies]
+async-graphql-axum.workspace = true
+async-graphql.workspace = true
+axum.workspace = true
+tokio.workspace = true
