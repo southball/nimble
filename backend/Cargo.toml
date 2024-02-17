@@ -13,3 +13,4 @@ anyhow = { version = "1.0" }
 oauth2 = { version = "4.4" }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
+tower-cookies = { version = "0.10" }

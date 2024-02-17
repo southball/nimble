@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::{collections::HashMap, sync::Arc};
 use std::{future::Future, pin::Pin};
 
@@ -7,20 +8,26 @@ use axum::{
     Extension,
 };
 
-use openidconnect::core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata};
+use openidconnect::core::{
+    CoreAuthenticationFlow, CoreClient, CoreGenderClaim, CoreJsonWebKeyType,
+    CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm, CoreProviderMetadata,
+};
 use openidconnect::{
-    AccessTokenHash, AuthorizationCode, ClientId, CsrfToken, IssuerUrl, Nonce, OAuth2TokenResponse,
-    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope, TokenResponse,
+    AccessTokenHash, AuthorizationCode, ClientId, CsrfToken, EmptyAdditionalClaims, IdToken,
+    IssuerUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope,
+    TokenResponse,
 };
 
 use reqwest::Certificate;
 use tokio::sync::Mutex;
+use tower_cookies::{Cookie, Cookies};
 
 use crate::utilities::{
     axum::{bad_request, internal_server_error},
     Cached,
 };
 
+/// This is the openidconnect::reqwest::async_http_client function with a certificate added.
 pub async fn async_http_client_with_certificate(
     request: openidconnect::HttpRequest,
 ) -> Result<openidconnect::HttpResponse, oauth2::reqwest::Error<reqwest::Error>> {
@@ -67,7 +74,8 @@ KQIhAP3b2AvHAX9AQP7FRzUPqsPD/JcUouMvjoDoD4DuI7DZ
     })
 }
 
-pub fn oidc_client() -> Pin<Box<dyn Future<Output = anyhow::Result<CoreClient>> + Send>> {
+pub fn oidc_provider_metadata(
+) -> Pin<Box<dyn Future<Output = anyhow::Result<CoreProviderMetadata>> + Send>> {
     Box::pin(async {
         let provider_metadata = CoreProviderMetadata::discover_async(
             IssuerUrl::new("https://auth.yuru.site/realms/kmc".to_string()).unwrap(),
@@ -76,14 +84,22 @@ pub fn oidc_client() -> Pin<Box<dyn Future<Output = anyhow::Result<CoreClient>> 
         .await
         .unwrap();
 
+        Ok(provider_metadata)
+    })
+}
+
+pub fn oidc_client() -> Pin<Box<dyn Future<Output = anyhow::Result<CoreClient>> + Send>> {
+    Box::pin(async {
+        let provider_metadata = oidc_provider_metadata().await?;
+
         let client = CoreClient::from_provider_metadata(
             provider_metadata,
             ClientId::new("nimble".to_string()),
             None,
         )
-        .set_redirect_uri(
-            RedirectUrl::new("http://localhost:3000/api/auth/redirect".to_string()).unwrap(),
-        );
+        .set_redirect_uri(RedirectUrl::new(
+            "http://localhost:3000/api/auth/redirect".to_string(),
+        )?);
 
         Ok(client)
     })
@@ -99,24 +115,12 @@ pub struct AuthStateStore(pub Arc<Mutex<HashMap<String, AuthState>>>);
 
 pub async fn auth_login(
     Extension(AuthStateStore(auth_state_store)): Extension<AuthStateStore>,
+    Extension(cached_oidc_client): Extension<Cached<CoreClient, anyhow::Error>>,
 ) -> Result<Response, Response> {
-    let provider_metadata = CoreProviderMetadata::discover_async(
-        IssuerUrl::new("https://auth.yuru.site/realms/kmc".to_string())
-            .map_err(|_| internal_server_error("Failed to parse issuer URL"))?,
-        async_http_client_with_certificate,
-    )
-    .await
-    .map_err(|_| internal_server_error("Failed to discover provider metadata"))?;
-
-    let client = CoreClient::from_provider_metadata(
-        provider_metadata,
-        ClientId::new("nimble".to_string()),
-        None,
-    )
-    .set_redirect_uri(
-        RedirectUrl::new("http://localhost:3000/api/auth/redirect".to_string())
-            .map_err(|_| internal_server_error("Failed to parse redirect URL"))?,
-    );
+    let client = cached_oidc_client
+        .get()
+        .await
+        .map_err(|_| internal_server_error("Failed to get OIDC client"))?;
 
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -157,6 +161,7 @@ pub async fn auth_redirect(
     Query(query): Query<AuthRedirectQuery>,
     Extension(AuthStateStore(auth_state_store)): Extension<AuthStateStore>,
     Extension(cached_oidc_client): Extension<Cached<CoreClient, anyhow::Error>>,
+    cookies: Cookies,
 ) -> Result<Response, Response> {
     let auth_state = {
         let mut auth_state_store = auth_state_store.lock().await;
@@ -197,17 +202,75 @@ pub async fn auth_redirect(
         }
     }
 
-    let response = format!(
-        "User {} with e-mail address {} has authenticated successfully",
-        claims
-            .preferred_username()
-            .map(|username| username.as_str())
-            .unwrap_or("<not provided>"),
-        claims
-            .email()
-            .map(|email| email.as_str())
-            .unwrap_or("<not provided>"),
+    // let response = format!(
+    //     "User {} with e-mail address {} has authenticated successfully",
+    //     claims
+    //         .preferred_username()
+    //         .map(|username| username.as_str())
+    //         .unwrap_or("<not provided>"),
+    //     claims
+    //         .email()
+    //         .map(|email| email.as_str())
+    //         .unwrap_or("<not provided>"),
+    // );
+
+    // cookies.add(
+    //     Cookie::build((
+    //         "access_token",
+    //         token_response.access_token().secret().to_string(),
+    //     ))
+    //     .http_only(true)
+    //     .secure(false)
+    //     .path("/")
+    //     .build(),
+    // );
+
+    cookies.add(
+        Cookie::build((
+            "id_token",
+            token_response
+                .id_token()
+                .ok_or_else(|| bad_request("Missing ID token"))?
+                .to_string(),
+        ))
+        .http_only(true)
+        .secure(false)
+        .path("/")
+        .build(),
     );
 
-    Ok(response.into_response())
+    Ok((Redirect::temporary("/"),).into_response())
+}
+
+pub async fn auth_request(
+    cookies: Cookies,
+    cached_oidc_client: Extension<Cached<CoreClient, anyhow::Error>>,
+) -> Result<Response, Response> {
+    if let Some(id_token_cookie) = cookies.get("id_token") {
+        let _client = cached_oidc_client
+            .get()
+            .await
+            .map_err(|_| internal_server_error("Failed to get OIDC provider metadata"))?;
+        let _id_token = IdToken::<
+            EmptyAdditionalClaims,
+            CoreGenderClaim,
+            CoreJweContentEncryptionAlgorithm,
+            CoreJwsSigningAlgorithm,
+            CoreJsonWebKeyType,
+        >::from_str(id_token_cookie.value())
+        .map_err(|_| internal_server_error("Failed to parse ID token"))?;
+        // ここの nonce どうするん？？
+        // let claims = id_token.claims(&client.id_token_verifier(), &Nonce::new("".to_string()))?;
+        // TODO: make sure whether to use access token or id token
+        // TODO: verify id token or access token correctly
+        Ok(Response::builder()
+            .status(200)
+            .body("Authenticated".into())
+            .unwrap())
+    } else {
+        Err(Response::builder()
+            .status(500)
+            .body("Not authenticated".into())
+            .unwrap())
+    }
 }
